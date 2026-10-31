@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 from flask import Flask, jsonify, render_template, request, session
@@ -93,9 +94,13 @@ def init_auth_db():
         if AUTH_DB_MODE == "mysql":
             db.execute("CREATE TABLE IF NOT EXISTS users (id BIGINT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(80) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
             db.execute("CREATE TABLE IF NOT EXISTS user_saves (user_id BIGINT PRIMARY KEY, save_data LONGTEXT NOT NULL, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, CONSTRAINT fk_user_saves_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
+            db.execute("CREATE TABLE IF NOT EXISTS qinbox_daily_claims (user_id BIGINT PRIMARY KEY, last_claim_date DATE NOT NULL, CONSTRAINT fk_daily_claim_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
+            db.execute("CREATE TABLE IF NOT EXISTS qinbox_civilian_daily_usage (user_id BIGINT NOT NULL, local_date DATE NOT NULL, dialogue_count INT NOT NULL DEFAULT 0, PRIMARY KEY (user_id, local_date), CONSTRAINT fk_civilian_usage_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
         else:
             db.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
             db.execute("CREATE TABLE IF NOT EXISTS user_saves (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, save_data TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+            db.execute("CREATE TABLE IF NOT EXISTS qinbox_daily_claims (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, last_claim_date TEXT NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS qinbox_civilian_daily_usage (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, local_date TEXT NOT NULL, dialogue_count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, local_date))")
 
 init_auth_db()
 
@@ -244,15 +249,139 @@ def account_save():
     saved = data.get("save")
     if not isinstance(saved, dict) or not isinstance(saved.get("chats"), dict):
         return jsonify(error="存档格式无效。"), 400
-    serialized = json.dumps(saved, ensure_ascii=False, separators=(",", ":"))
-    if len(serialized.encode("utf-8")) > 850_000:
-        return jsonify(error="存档超过云端单次保存上限，请先导出备份并清理过长聊天记录。"), 413
     with auth_db() as db:
+        existing_row = db.execute(
+            "SELECT save_data FROM user_saves WHERE user_id = ?" + (" FOR UPDATE" if AUTH_DB_MODE == "mysql" else ""),
+            (user_id,),
+        ).fetchone()
+        try:
+            existing_save = json.loads(existing_row[0]) if existing_row else {}
+        except (TypeError, json.JSONDecodeError):
+            existing_save = {}
+        saved["globalReputation"] = max(
+            0, int(saved.get("globalReputation", 0)), int(existing_save.get("globalReputation", 0))
+        )
+        serialized = json.dumps(saved, ensure_ascii=False, separators=(",", ":"))
+        if len(serialized.encode("utf-8")) > 850_000:
+            return jsonify(error="存档超过云端单次保存上限，请先导出备份并清理过长聊天记录。"), 413
         if AUTH_DB_MODE == "mysql":
             db.execute("INSERT INTO user_saves (user_id, save_data) VALUES (?, ?) ON DUPLICATE KEY UPDATE save_data = VALUES(save_data), updated_at = CURRENT_TIMESTAMP", (user_id, serialized))
         else:
             db.execute("INSERT INTO user_saves (user_id, save_data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET save_data = excluded.save_data, updated_at = CURRENT_TIMESTAMP", (user_id, serialized))
     return jsonify(ok=True)
+
+def beijing_day():
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+
+def empty_account_save():
+    return {"version": 1, "active": "ying-zheng", "activeGroupId": None, "groups": [], "lishanChat": [], "hypnosis": False, "globalReputation": 0, "totalUserMessages": 0, "courtPosts": [], "trust": {}, "giftsReceived": {}, "chats": {}, "sharedMemories": [], "inventory": [], "clues": [], "unlocked": ["ying-zheng", "zhao-gao", "lao-ai", "fusu", "hu-hai", "empress-dowager-zhao", "lu-buwei"], "createdAt": datetime.now(timezone.utc).isoformat()}
+
+def persist_feature_save(db, user_id, saved):
+    serialized = json.dumps(saved, ensure_ascii=False, separators=(",", ":"))
+    if AUTH_DB_MODE == "mysql":
+        db.execute("INSERT INTO user_saves (user_id, save_data) VALUES (?, ?) ON DUPLICATE KEY UPDATE save_data = VALUES(save_data), updated_at = CURRENT_TIMESTAMP", (user_id, serialized))
+    else:
+        db.execute("INSERT INTO user_saves (user_id, save_data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET save_data = excluded.save_data, updated_at = CURRENT_TIMESTAMP", (user_id, serialized))
+
+@app.get("/api/daily-state")
+@login_required
+def daily_state():
+    user_id = session["user_id"]
+    today = beijing_day()
+    with auth_db() as db:
+        claim = db.execute("SELECT last_claim_date FROM qinbox_daily_claims WHERE user_id = ?", (user_id,)).fetchone()
+        usage = db.execute("SELECT dialogue_count FROM qinbox_civilian_daily_usage WHERE user_id = ? AND local_date = ?", (user_id, today)).fetchone()
+        save_row = db.execute("SELECT save_data FROM user_saves WHERE user_id = ?", (user_id,)).fetchone()
+    saved = json.loads(save_row[0]) if save_row else {}
+    last_claim = str(claim[0]) if claim else None
+    used = int(usage[0]) if usage else 0
+    return jsonify(date=today, lastClaimDate=last_claim, claimedToday=last_claim == today, civilianDialoguesUsed=used, civilianDialoguesRemaining=max(0, 5 - used), reputation=int(saved.get("globalReputation", 0)))
+
+@app.post("/api/daily-salary")
+@login_required
+def claim_daily_salary():
+    user_id = session["user_id"]
+    today = beijing_day()
+    data = request.get_json(silent=True) or {}
+    with auth_db() as db:
+        save_row = db.execute("SELECT save_data FROM user_saves WHERE user_id = ?", (user_id,)).fetchone()
+        try:
+            saved = json.loads(save_row[0]) if save_row else empty_account_save()
+        except (TypeError, json.JSONDecodeError):
+            return jsonify(error="账号存档无法读取，暂时不能领取俸禄。"), 500
+        if AUTH_DB_MODE == "mysql":
+            cursor = db.execute("INSERT INTO qinbox_daily_claims (user_id, last_claim_date) VALUES (?, ?) ON DUPLICATE KEY UPDATE last_claim_date = IF(last_claim_date <> VALUES(last_claim_date), VALUES(last_claim_date), last_claim_date)", (user_id, today))
+        else:
+            cursor = db.execute("INSERT INTO qinbox_daily_claims (user_id, last_claim_date) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET last_claim_date = excluded.last_claim_date WHERE last_claim_date <> excluded.last_claim_date", (user_id, today))
+        if cursor.rowcount == 0:
+            current = int(saved.get("globalReputation", 0))
+            return jsonify(error="今日俸禄已经领取过了。", claimedToday=True, date=today, reputation=current), 409
+        try:
+            client_reputation = max(0, int(data.get("reputation", 0)))
+        except (TypeError, ValueError):
+            client_reputation = 0
+        saved["globalReputation"] = max(client_reputation, max(0, int(saved.get("globalReputation", 0)))) + 20
+        persist_feature_save(db, user_id, saved)
+        reputation = saved["globalReputation"]
+    return jsonify(ok=True, date=today, reward=20, reputation=reputation, claimedToday=True)
+
+@app.post("/api/lushan/chat")
+@login_required
+def lishan_chat():
+    data = request.get_json(silent=True) or {}
+    messages = data.get("messages")
+    if not isinstance(messages, list) or not messages or not isinstance(messages[-1], dict) or messages[-1].get("role") != "user" or not isinstance(messages[-1].get("content"), str):
+        return jsonify(error="先写下你想托梦询问的话。"), 400
+    try:
+        api_key = get_api_key(request)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    if not api_key:
+        return jsonify(error="尚未配置 DeepSeek API Key。"), 503
+    today = beijing_day()
+    user_id = session["user_id"]
+    with auth_db() as db:
+        if AUTH_DB_MODE == "mysql":
+            cursor = db.execute("INSERT INTO qinbox_civilian_daily_usage (user_id, local_date, dialogue_count) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE dialogue_count = IF(dialogue_count < 5, dialogue_count + 1, dialogue_count)", (user_id, today))
+        else:
+            cursor = db.execute("INSERT INTO qinbox_civilian_daily_usage (user_id, local_date, dialogue_count) VALUES (?, ?, 1) ON CONFLICT(user_id, local_date) DO UPDATE SET dialogue_count = dialogue_count + 1 WHERE dialogue_count < 5", (user_id, today))
+        usage_row = db.execute("SELECT dialogue_count FROM qinbox_civilian_daily_usage WHERE user_id = ? AND local_date = ?", (user_id, today)).fetchone()
+        used = int(usage_row[0]) if usage_row else 0
+        if cursor.rowcount == 0 or used > 5:
+            return jsonify(error="今日托梦已满五次，明日再来听她讲完。", civilianDialoguesUsed=used, civilianDialoguesRemaining=0), 429
+    safe_messages = []
+    for item in messages[-16:]:
+        if isinstance(item, dict) and item.get("role") in ("user", "assistant") and isinstance(item.get("content"), str):
+            safe_messages.append({"role": item["role"], "content": item["content"][:1800]})
+    prompt = (BASE / "prompts" / "shared_rules.txt").read_text(encoding="utf-8") + "\n\n" + (BASE / "prompts" / "meng-jiang-nu.txt").read_text(encoding="utf-8")
+    prompt += "\n\n【本日托梦】这是玩家今日第 " + str(used) + " 次与孟姜女交谈。她是传说人物的戏剧化塑造，不要将其故事声称为可确证的秦代个人史实。玩家为魇胜师，称呼玩家为魇胜师。请尊重百姓的处境；先倾听，再循序讲出自己的难言之隐，不强迫玩家采取任何选择。以自然对话回应，不输出系统说明或积分。"
+    try:
+        response = requests.post(BASE_URL.rstrip("/") + "/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": MODEL, "messages": [{"role": "system", "content": prompt}, *safe_messages], "temperature": 0.85, "max_tokens": 650}, timeout=90)
+        response.raise_for_status()
+        answer = response.json()["choices"][0]["message"]["content"].strip()
+        with auth_db() as db:
+            save_row = db.execute("SELECT save_data FROM user_saves WHERE user_id = ?", (user_id,)).fetchone()
+            try:
+                saved = json.loads(save_row[0]) if save_row else empty_account_save()
+            except (TypeError, json.JSONDecodeError):
+                saved = empty_account_save()
+            try:
+                client_reputation = max(0, int(data.get("reputation", 0)))
+            except (TypeError, ValueError):
+                client_reputation = 0
+            saved["globalReputation"] = max(client_reputation, max(0, int(saved.get("globalReputation", 0)))) + 5
+            saved["totalUserMessages"] = max(0, int(saved.get("totalUserMessages", 0))) + 1
+            persist_feature_save(db, user_id, saved)
+            reputation = saved["globalReputation"]
+        return jsonify(reply=answer, reward=5, reputation=reputation, civilianDialoguesUsed=used, civilianDialoguesRemaining=max(0, 5 - used), dailyLimit=5)
+    except requests.RequestException as exc:
+        with auth_db() as db:
+            db.execute("UPDATE qinbox_civilian_daily_usage SET dialogue_count = CASE WHEN dialogue_count > 0 THEN dialogue_count - 1 ELSE 0 END WHERE user_id = ? AND local_date = ?", (user_id, today))
+        return jsonify(error=f"托梦暂时未能接通：{exc}"), 502
+    except (KeyError, IndexError, ValueError):
+        with auth_db() as db:
+            db.execute("UPDATE qinbox_civilian_daily_usage SET dialogue_count = CASE WHEN dialogue_count > 0 THEN dialogue_count - 1 ELSE 0 END WHERE user_id = ? AND local_date = ?", (user_id, today))
+        return jsonify(error="托梦回应暂时无法整理，请重试。"), 502
 
 @app.get("/api/characters")
 @login_required
