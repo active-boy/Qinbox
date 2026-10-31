@@ -335,6 +335,68 @@ def chat():
     except (KeyError, IndexError, ValueError):
         return jsonify(error="DeepSeek 返回内容格式异常，请稍后重试。"), 502
 
+@app.post("/api/group-chat")
+@login_required
+def group_chat():
+    data = request.get_json(silent=True) or {}
+    member_ids = data.get("memberIds")
+    messages = data.get("messages")
+    if not isinstance(member_ids, list) or not 1 <= len(member_ids) <= 8 or any(not isinstance(cid, str) or cid not in CHARACTERS for cid in member_ids) or len(set(member_ids)) != len(member_ids):
+        return jsonify(error="群聊成员列表无效。"), 400
+    try:
+        reputation = int(data.get("reputation", 0))
+    except (TypeError, ValueError):
+        reputation = 0
+    if reputation < 150:
+        return jsonify(error="全局信誉达到 150 后，鸿门夜宴方可开启。"), 403
+    if any(CHARACTERS[cid][3] for cid in member_ids) and reputation < 100:
+        return jsonify(error="群聊中有尚未解锁的人物。"), 403
+    if not isinstance(messages, list) or not messages or not isinstance(messages[-1], dict) or messages[-1].get("role") != "user" or not isinstance(messages[-1].get("content"), str):
+        return jsonify(error="请先在席间说句话。"), 400
+    safe_rows = []
+    for item in messages[-24:]:
+        if not isinstance(item, dict) or item.get("role") not in ("user", "assistant") or not isinstance(item.get("content"), str):
+            continue
+        speaker = item.get("characterId")
+        if item["role"] == "assistant" and speaker not in member_ids:
+            continue
+        label = "魇胜师" if item["role"] == "user" else CHARACTERS[speaker][0]
+        safe_rows.append(f"{label}：{item['content'][:1200]}")
+    latest = messages[-1]["content"][:1200]
+    responders = [cid for cid in member_ids if re.search(re.escape(CHARACTERS[cid][0]), latest)]
+    if not responders:
+        requested = data.get("responders", [])
+        responders = [cid for cid in requested if cid in member_ids][:2] if isinstance(requested, list) else []
+        if not responders:
+            responders = random.sample(member_ids, min(2, len(member_ids)))
+    try:
+        api_key = get_api_key(request)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    if not api_key:
+        return jsonify(error="尚未配置 DeepSeek API Key。"), 503
+    joint = data.get("memoryMode") == "joint"
+    transcript = "\n".join(safe_rows)[-7000:]
+    shared = str(data.get("sharedMemory", ""))[:2500] if joint else ""
+    replies = []
+    try:
+        for cid in responders:
+            prompt = (BASE / "prompts" / "shared_rules.txt").read_text(encoding="utf-8") + "\n\n" + (BASE / "prompts" / CHARACTERS[cid][2]).read_text(encoding="utf-8")
+            prompt += "\n\n【鸿门夜宴规则】你正在和魇胜师及同席人物群聊。只以自己的身份回应，不代替他人发言；保持角色身份、称谓与时代边界。玩家称为魇胜师。\n【本群席间记录】\n" + transcript
+            prompt += "\n【记忆模式】联合催眠：本群梦痕可以与外部梦痕互通。" if joint else "\n【记忆模式】内生梦境：只参考本群席间记录，不读取群外角色记忆。"
+            if shared:
+                prompt += "\n【可共享的外部梦痕】\n" + shared
+            response = requests.post(BASE_URL.rstrip("/") + "/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": MODEL, "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": latest}], "temperature": 0.88, "max_tokens": 450}, timeout=90)
+            response.raise_for_status()
+            answer = response.json()["choices"][0]["message"]["content"].strip()
+            replies.append({"characterId": cid, "content": answer[:3000]})
+            transcript += f"\n{CHARACTERS[cid][0]}：{answer[:1000]}"
+        return jsonify(replies=replies)
+    except requests.RequestException as exc:
+        return jsonify(error=f"席间一时无声，暂时无法连接 DeepSeek：{exc}"), 502
+    except (KeyError, IndexError, ValueError):
+        return jsonify(error="席间回应暂时无法整理，请重试。"), 502
+
 @app.post("/api/court")
 @login_required
 def court():
