@@ -5,7 +5,7 @@ import random
 import sqlite3
 import secrets
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -92,8 +92,10 @@ def init_auth_db():
     with auth_db() as db:
         if AUTH_DB_MODE == "mysql":
             db.execute("CREATE TABLE IF NOT EXISTS users (id BIGINT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(80) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
+            db.execute("CREATE TABLE IF NOT EXISTS user_saves (user_id BIGINT PRIMARY KEY, save_data LONGTEXT NOT NULL, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, CONSTRAINT fk_user_saves_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
         else:
             db.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+            db.execute("CREATE TABLE IF NOT EXISTS user_saves (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, save_data TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
 
 init_auth_db()
 
@@ -210,6 +212,46 @@ def login():
 @app.post("/api/logout")
 def logout():
     session.clear()
+    return jsonify(ok=True)
+
+@app.route("/api/save", methods=["GET", "PUT", "DELETE"])
+@login_required
+def account_save():
+    user_id = session["user_id"]
+    if request.method == "GET":
+        with auth_db() as db:
+            row = db.execute("SELECT save_data, updated_at FROM user_saves WHERE user_id = ?", (user_id,)).fetchone()
+        if not row:
+            return jsonify(save=None, updatedAt=None)
+        try:
+            saved = json.loads(row[0])
+        except (TypeError, json.JSONDecodeError):
+            return jsonify(error="云端存档无法读取，请先导出本机存档并联系管理员。"), 500
+        if not isinstance(saved, dict):
+            return jsonify(error="云端存档格式异常。"), 500
+        return jsonify(save=saved, updatedAt=str(row[1]))
+
+    if request.method == "DELETE":
+        reset_save = json.dumps({"version": 1, "active": "ying-zheng", "hypnosis": False, "globalReputation": 0, "totalUserMessages": 0, "courtPosts": [], "trust": {}, "giftsReceived": {}, "chats": {}, "sharedMemories": [], "inventory": [], "clues": [], "unlocked": ["ying-zheng", "zhao-gao", "lao-ai", "fusu", "hu-hai", "empress-dowager-zhao", "lu-buwei"], "createdAt": datetime.now(timezone.utc).isoformat(), "resetAt": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False)
+        with auth_db() as db:
+            if AUTH_DB_MODE == "mysql":
+                db.execute("INSERT INTO user_saves (user_id, save_data) VALUES (?, ?) ON DUPLICATE KEY UPDATE save_data = VALUES(save_data), updated_at = CURRENT_TIMESTAMP", (user_id, reset_save))
+            else:
+                db.execute("INSERT INTO user_saves (user_id, save_data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET save_data = excluded.save_data, updated_at = CURRENT_TIMESTAMP", (user_id, reset_save))
+        return jsonify(ok=True)
+
+    data = request.get_json(silent=True) or {}
+    saved = data.get("save")
+    if not isinstance(saved, dict) or not isinstance(saved.get("chats"), dict):
+        return jsonify(error="存档格式无效。"), 400
+    serialized = json.dumps(saved, ensure_ascii=False, separators=(",", ":"))
+    if len(serialized.encode("utf-8")) > 850_000:
+        return jsonify(error="存档超过云端单次保存上限，请先导出备份并清理过长聊天记录。"), 413
+    with auth_db() as db:
+        if AUTH_DB_MODE == "mysql":
+            db.execute("INSERT INTO user_saves (user_id, save_data) VALUES (?, ?) ON DUPLICATE KEY UPDATE save_data = VALUES(save_data), updated_at = CURRENT_TIMESTAMP", (user_id, serialized))
+        else:
+            db.execute("INSERT INTO user_saves (user_id, save_data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET save_data = excluded.save_data, updated_at = CURRENT_TIMESTAMP", (user_id, serialized))
     return jsonify(ok=True)
 
 @app.get("/api/characters")

@@ -43,7 +43,7 @@
       <div id="typing" class="typing hidden"><span></span><span></span><span></span><i>正在斟酌言辞…</i></div>
       <div id="quick-prompts" class="quick-prompts"><button data-prompt="你今日似乎心事重重，可愿说与我听？">问问今日心事</button><button data-prompt="若入梦一回，你最不愿想起什么？">共入一梦</button><button data-prompt="咸阳城近日可有新鲜事？">打听咸阳近况</button></div>
       <form id="composer" class="composer"><button class="composer-plus" type="button" id="gift-open" title="背包与礼物">＋</button><div class="input-wrap"><textarea id="message-input" rows="1" placeholder="写下你想说的话…" maxlength="1500"></textarea><div class="input-meta"><span>Enter 发送 · Shift + Enter 换行</span><span id="char-count">0 / 1500</span></div></div><button class="send-button" type="submit" aria-label="发送">➤</button></form>
-      <footer class="safety-note">历史人物为戏剧化演绎 · 对话内容保存在本机浏览器</footer>
+      <footer class="safety-note">历史人物为戏剧化演绎 · 存档关联账号并自动同步 <span id="save-sync-status" aria-live="polite">读取账号存档…</span></footer>
     </section>
     <section id="tab-view" class="tab-view hidden"></section>
     <nav class="bottom-nav"><button class="nav-item active" data-tab="chat"><span>◉</span>聊天</button><button class="nav-item" data-tab="contacts"><span>♙</span>通讯录</button><button class="nav-item" data-tab="discover"><span>◈</span>发现</button><button class="nav-item" data-tab="me"><span>◯</span>我</button></nav>
@@ -62,5 +62,5 @@
 </div>
 <div id="modal" class="modal hidden"><div class="modal-backdrop"></div><div class="modal-card"><button id="modal-close" class="modal-close">×</button><div id="modal-content"></div></div></div>
 <div id="toast" class="toast"></div>
-<script>window.QIN_ACCOUNT={{ account_id|tojson }};</script><script src="/static/lobby.js?v=4"></script><script src="/static/app.js?v=12"></script><script src="/static/discover.js?v=5"></script><script src="/static/military.js?v=5"></script><script src="/static/translation.js?v=7"></script>
+<script>window.QIN_ACCOUNT={{ account_id|tojson }};</script><script src="/static/lobby.js?v=4"></script><script src="/static/app.js?v=13"></script><script src="/static/discover.js?v=5"></script><script src="/static/military.js?v=5"></script><script src="/static/translation.js?v=7"></script>
 </body></html>
