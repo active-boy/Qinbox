@@ -1,0 +1,21 @@
+{
+  "containerPort": 80,
+  "minNum": 0,
+  "maxNum": 3,
+  "cpu": 0.5,
+  "mem": 1,
+  "policyType": "cpu",
+  "policyThreshold": 60,
+  "envParams": {
+    "QINBOX_AUTH_DB": "mysql",
+    "MYSQL_DATABASE": "qinbox"
+  },
+  "customLogs": "stdout",
+  "initialDelaySeconds": 5,
+  "dataBaseName": "qinbox",
+  "executeSQLs": [
+    "CREATE DATABASE IF NOT EXISTS qinbox;",
+    "USE qinbox;",
+    "CREATE TABLE IF NOT EXISTS users (id BIGINT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(80) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+  ]
+}

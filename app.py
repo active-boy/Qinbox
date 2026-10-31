@@ -4,6 +4,7 @@ import re
 import random
 import sqlite3
 import secrets
+from contextlib import contextmanager
 from datetime import timedelta
 from functools import wraps
 from pathlib import Path
@@ -12,26 +13,87 @@ import requests
 from flask import Flask, jsonify, render_template, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
+try:
+    import pymysql
+except ImportError:
+    pymysql = None
+
 BASE = Path(__file__).resolve().parent
-DATA_DIR = Path(os.getenv("QINBOX_DATA_DIR", str(BASE))).resolve()
-DATA_DIR.mkdir(parents=True, exist_ok=True)
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["MAX_CONTENT_LENGTH"] = 1_000_000
-SECRET_FILE = DATA_DIR / ".qinbox_session_secret"
+AUTH_DB_MODE = os.getenv("QINBOX_AUTH_DB", "sqlite").lower()
+if AUTH_DB_MODE not in ("sqlite", "mysql"):
+    raise RuntimeError("QINBOX_AUTH_DB 只能设置为 sqlite 或 mysql。")
+if AUTH_DB_MODE == "mysql":
+    if pymysql is None:
+        raise RuntimeError("云端 MySQL 驱动缺失，请安装 requirements.txt 中的 PyMySQL。")
+    required_mysql_env = ("MYSQL_ADDRESS", "MYSQL_USERNAME", "MYSQL_PASSWORD")
+    missing_mysql_env = [name for name in required_mysql_env if not os.getenv(name)]
+    if missing_mysql_env:
+        raise RuntimeError("云端 MySQL 环境变量未配置：" + ", ".join(missing_mysql_env))
+    if not os.getenv("QINBOX_SESSION_SECRET"):
+        raise RuntimeError("云端必须配置固定的 QINBOX_SESSION_SECRET。")
+else:
+    DATA_DIR = Path(os.getenv("QINBOX_DATA_DIR", str(BASE))).resolve()
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 if os.getenv("QINBOX_SESSION_SECRET"):
     app.secret_key = os.environ["QINBOX_SESSION_SECRET"]
-else:
+elif AUTH_DB_MODE == "sqlite":
+    SECRET_FILE = DATA_DIR / ".qinbox_session_secret"
     try:
         app.secret_key = SECRET_FILE.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         app.secret_key = secrets.token_hex(32)
         SECRET_FILE.write_text(app.secret_key, encoding="utf-8")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
-DATABASE = DATA_DIR / "qinbox_users.sqlite3"
+if AUTH_DB_MODE == "sqlite":
+    DATABASE = Path(os.getenv("QINBOX_DATA_DIR", str(BASE))).resolve() / "qinbox_users.sqlite3"
+
+class AuthDatabase:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, statement, params=()):
+        if AUTH_DB_MODE == "sqlite":
+            return self.connection.execute(statement, params)
+        cursor = self.connection.cursor()
+        cursor.execute(statement.replace("?", "%s"), params)
+        return cursor
+
+@contextmanager
+def auth_db():
+    if AUTH_DB_MODE == "mysql":
+        address = os.environ["MYSQL_ADDRESS"]
+        host, separator, port = address.rpartition(":")
+        if not separator or not port.isdigit():
+            host, port = address, os.getenv("MYSQL_PORT", "3306")
+        connection = pymysql.connect(
+            host=host,
+            port=int(port),
+            user=os.environ["MYSQL_USERNAME"],
+            password=os.environ["MYSQL_PASSWORD"],
+            database=os.getenv("MYSQL_DATABASE", "qinbox"),
+            charset="utf8mb4",
+            autocommit=False,
+        )
+    else:
+        connection = sqlite3.connect(DATABASE)
+    try:
+        yield AuthDatabase(connection)
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 def init_auth_db():
-    with sqlite3.connect(DATABASE) as db:
-        db.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+    with auth_db() as db:
+        if AUTH_DB_MODE == "mysql":
+            db.execute("CREATE TABLE IF NOT EXISTS users (id BIGINT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(80) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
+        else:
+            db.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
 
 init_auth_db()
 
@@ -119,10 +181,10 @@ def register():
     if len(password) < 8 or len(password) > 128:
         return jsonify(error="密码长度需为 8–128 位。"), 400
     try:
-        with sqlite3.connect(DATABASE) as db:
+        with auth_db() as db:
             cursor = db.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, generate_password_hash(password)))
             user_id = cursor.lastrowid
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, pymysql.err.IntegrityError if pymysql else sqlite3.IntegrityError):
         return jsonify(error="这个账号已经注册，请直接登录。"), 409
     session.clear()
     session["user_id"] = user_id
@@ -135,7 +197,7 @@ def login():
     data = request.get_json(silent=True) or {}
     username = str(data.get("username", "")).strip()
     password = str(data.get("password", ""))
-    with sqlite3.connect(DATABASE) as db:
+    with auth_db() as db:
         row = db.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,)).fetchone()
     if not row or not check_password_hash(row[2], password):
         return jsonify(error="账号或密码不正确。"), 401
@@ -368,4 +430,4 @@ def li_si_compose():
     except (KeyError, IndexError, ValueError):
         return jsonify(error="议事问法生成失败，请再试一次。"), 502
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5050, debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5050")), debug=False)

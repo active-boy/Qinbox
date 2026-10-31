@@ -19,11 +19,11 @@
 
 注册时填写虎符或自己的 DeepSeek Key。虎符与服务器保存的私有码匹配时使用服务器 Key；填写 `sk-...` 时使用玩家 Key。玩家 Key 只保留在当前页面内存中并经后端代理，不写入存档或数据库；刷新后可在游戏设置中重新填写。密钥只在本机服务端使用，不会下发到浏览器。若遇到执行策略限制，可直接运行 `.venv\Scripts\python.exe app.py`。
 
-## Netlify 上线
+## 微信云托管
 
-Netlify 负责对外网址和转发请求；当前 Flask 服务部署在 Render。Netlify Functions 目前支持 JavaScript、TypeScript 和 Go，不直接运行本项目的 Flask/Python 服务。仓库中的 `render.yaml` 和 `netlify.toml` 已提供部署配置。首次部署 Render 后，请确认它分配的网址与 `netlify.toml` 中的 `https://qinbox-api.onrender.com` 一致；若不一致，修改该转发网址并推送一次。
+仓库包含微信云托管 Docker 部署文件。部署现有代码时使用仓库根目录，不要在开发者工具的“快速启动 Flask 项目”中覆盖 `app.py`。云端以 `QINBOX_AUTH_DB=mysql` 启动，并通过云托管 MySQL 保存账号；本地直接运行时仍默认使用 SQLite。先创建数据库 `qinbox`，再在服务环境变量中配置 `MYSQL_ADDRESS`（格式为 `主机:端口`）、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`MYSQL_DATABASE=qinbox`、`QINBOX_AUTH_DB=mysql`、`QINBOX_SESSION_SECRET`、`DEEPSEEK_API_KEY` 与私有的 `QINBOX_ACTIVATION_CODE`。可用 `python -c "import secrets; print(secrets.token_hex(32))"` 生成会话密钥。不要把任何密钥写进 Dockerfile 或提交到 GitHub。
 
-Render 需要设置 `DEEPSEEK_API_KEY` 和私有的 `QINBOX_ACTIVATION_CODE`。SQLite 用户库及 Flask 登录会话密钥写入 `/var/data` 持久磁盘，避免重新部署后丢失。Netlify 对外部代理请求有 26 秒超时限制，模型响应超过该时间时浏览器会看到请求失败；若经常发生，应让玩家浏览器直接请求后端并配置跨域认证，或把前后端都迁到同一 Python 主机/自定义域名架构。
+云托管容器按无状态服务设计，不要把 SQLite 或会话密钥留在容器本地；账号数据库使用 MySQL，Flask 登录状态使用固定的服务端密钥签名。本机存档仍保存在玩家浏览器中。微信云托管资源有免费额度及按量计费规则，请在控制台留意额度和用量。
 
 ## 主要功能
 
