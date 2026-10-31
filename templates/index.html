@@ -18,7 +18,7 @@
 </div>
 <div id="lobby-screen" class="game-lobby {% if not account_id %}hidden{% endif %}">
   <div class="lobby-image" aria-hidden="true"></div><div class="lobby-shade"></div>
-  <header class="lobby-header"><div class="lobby-wordmark"><span>秦</span> 秦-Box</div><div class="lobby-user"><span id="lobby-user-name">{{ account_name or '' }}</span><button id="logout-button">退出账号</button></div></header>
+  <header class="lobby-header"><div class="lobby-wordmark"><span>秦</span> 秦-Box</div><div class="lobby-user"><span id="lobby-user-name">{{ account_name or '' }}</span><button id="logout-button">切换账号</button></div></header>
   <main class="lobby-center"><div class="lobby-overline">咸阳 · 梦境来信</div><h1>长夜将尽，故人入梦</h1><p>在历史的回声里，听见未曾说尽的话。</p><button id="enter-dream" class="enter-dream"><span>入梦</span></button><small>点击入梦，开启这一局</small>
   </main>
   <div class="lobby-bottom"><span>秦王政二十六年 · 咸阳</span><span>一城灯火，万古人心</span></div>
@@ -62,5 +62,5 @@
 </div>
 <div id="modal" class="modal hidden"><div class="modal-backdrop"></div><div class="modal-card"><button id="modal-close" class="modal-close">×</button><div id="modal-content"></div></div></div>
 <div id="toast" class="toast"></div>
-<script>window.QIN_ACCOUNT={{ account_id|tojson }};</script><script src="/static/lobby.js?v=4"></script><script src="/static/app.js?v=13"></script><script src="/static/discover.js?v=6"></script><script src="/static/military.js?v=5"></script><script src="/static/translation.js?v=7"></script>
+<script>window.QIN_ACCOUNT={{ account_id|tojson }};window.QIN_ACCOUNT_NAME={{ account_name|tojson }};</script><script src="/static/lobby.js?v=5"></script><script src="/static/app.js?v=14"></script><script src="/static/discover.js?v=6"></script><script src="/static/military.js?v=5"></script><script src="/static/translation.js?v=7"></script>
 </body></html>
