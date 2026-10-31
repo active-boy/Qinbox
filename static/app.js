@@ -1,6 +1,6 @@
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const STORAGE_KEY = 'qinbox-save-v1';
+const STORAGE_KEY = `qinbox-save-v1-account-${window.QIN_ACCOUNT||'guest'}`;
 const PEOPLE = {
  'ying-zheng':{name:'嬴政',subtitle:'秦王 · 后称始皇帝',desc:'以天下为棋局的君王，目光越过咸阳宫墙，落在尚未平定的远方。',hello:'魇胜师，寡人听闻你善察梦境。说说看，梦能替人看见什么？',era:'咸阳 · 梦回秦末'},
  'zhao-gao':{name:'赵高',subtitle:'中车府令 · 宫廷近臣',desc:'熟悉宫中每一道门、每一份文书，也熟悉沉默里藏着的心思。',hello:'魇胜师大人，宫里近来梦多。你觉得梦是天意，还是人心？',era:'咸阳 · 梦回秦末'},

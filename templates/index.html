@@ -11,8 +11,8 @@
 <div id="auth-screen" class="auth-screen {% if account_id %}hidden{% endif %}">
   <div class="auth-art" aria-hidden="true"></div>
   <section class="auth-card"><div class="auth-seal">秦</div><div class="auth-kicker">咸阳来信 · 梦境存档</div><h1>秦-Box</h1><p class="auth-subtitle">登录后继续你的咸阳故事</p>
-    <form id="login-form" class="auth-form"><label>账号<input name="username" autocomplete="username" required maxlength="20" placeholder="输入账号"></label><label>密码<input name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="输入密码"></label><button class="auth-submit">登录</button><button type="button" class="auth-switch" data-auth-mode="register">首次来访？使用激活码注册</button></form>
-    <form id="register-form" class="auth-form hidden"><label>激活码 / DeepSeek Key<input name="activationCode" type="password" autocomplete="off" required maxlength="256" placeholder="12345678 或 sk- 开头的 Key"></label><label>账号<input name="username" autocomplete="username" required maxlength="20" placeholder="3–20 位中英文、数字或符号"></label><label>密码<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128" placeholder="至少 8 位"></label><button class="auth-submit">注册并进入大厅</button><button type="button" class="auth-switch" data-auth-mode="login">已有账号？返回登录</button></form>
+    <form id="login-form" class="auth-form"><label>账号<input name="username" autocomplete="username" required maxlength="20" placeholder="输入账号"></label><label>密码<input name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="输入密码"></label><button class="auth-submit">登录</button><button type="button" class="auth-switch" data-auth-mode="register">首次来访？凭虎符注册</button></form>
+    <form id="register-form" class="auth-form hidden"><label>虎符<input name="activationCode" type="password" autocomplete="off" required maxlength="256" placeholder="输入虎符或 DeepSeek Key"></label><label>账号<input name="username" autocomplete="username" required maxlength="20" placeholder="3–20 位中英文、数字或符号"></label><label>密码<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128" placeholder="至少 8 位"></label><button class="auth-submit">注册并进入大厅</button><button type="button" class="auth-switch" data-auth-mode="login">已有账号？返回登录</button></form>
     <div id="auth-message" class="auth-message" role="status"></div>
   </section>
 </div>
@@ -20,7 +20,6 @@
   <div class="lobby-image" aria-hidden="true"></div><div class="lobby-shade"></div>
   <header class="lobby-header"><div class="lobby-wordmark"><span>秦</span> 秦-Box</div><div class="lobby-user"><span id="lobby-user-name">{{ account_name or '' }}</span><button id="logout-button">退出账号</button></div></header>
   <main class="lobby-center"><div class="lobby-overline">咸阳 · 梦境来信</div><h1>长夜将尽，故人入梦</h1><p>在历史的回声里，听见未曾说尽的话。</p><button id="enter-dream" class="enter-dream"><span>入梦</span></button><small>点击入梦，开启这一局</small>
-    <section id="api-settings-lobby-host"></section>
   </main>
   <div class="lobby-bottom"><span>秦王政二十六年 · 咸阳</span><span>一城灯火，万古人心</span></div>
   <div id="curtain-transition" class="curtain-transition" aria-hidden="true"><div class="curtain curtain-left"></div><div class="curtain curtain-right"></div></div>
@@ -63,5 +62,5 @@
 </div>
 <div id="modal" class="modal hidden"><div class="modal-backdrop"></div><div class="modal-card"><button id="modal-close" class="modal-close">×</button><div id="modal-content"></div></div></div>
 <div id="toast" class="toast"></div>
-<script>window.QIN_ACCOUNT={{ account_id|tojson }};</script><script src="/static/lobby.js?v=3"></script><script src="/static/app.js?v=11"></script><script src="/static/discover.js?v=5"></script><script src="/static/military.js?v=5"></script><script src="/static/translation.js?v=7"></script>
+<script>window.QIN_ACCOUNT={{ account_id|tojson }};</script><script src="/static/lobby.js?v=4"></script><script src="/static/app.js?v=12"></script><script src="/static/discover.js?v=5"></script><script src="/static/military.js?v=5"></script><script src="/static/translation.js?v=7"></script>
 </body></html>

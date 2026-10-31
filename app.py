@@ -26,7 +26,6 @@ else:
         SECRET_FILE.write_text(app.secret_key, encoding="utf-8")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 DATABASE = BASE / "qinbox_users.sqlite3"
-ACTIVATION_CODE = os.getenv("QINBOX_ACTIVATION_CODE", "12345678")
 
 def init_auth_db():
     with sqlite3.connect(DATABASE) as db:
@@ -60,6 +59,10 @@ except ImportError:
     API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
     BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+try:
+    ACTIVATION_CODE = os.getenv("QINBOX_ACTIVATION_CODE") or getattr(config, "QINBOX_ACTIVATION_CODE", "")
+except NameError:
+    ACTIVATION_CODE = os.getenv("QINBOX_ACTIVATION_CODE", "")
 
 CHARACTERS = {
     "ying-zheng": ("嬴政", "秦始皇", "ying-zheng.txt", False),
@@ -101,8 +104,10 @@ def register():
     username = str(data.get("username", "")).strip()
     password = str(data.get("password", ""))
     activation_code = str(data.get("activationCode", ""))
-    if activation_code != ACTIVATION_CODE and not (activation_code.startswith("sk-") and len(activation_code) >= 12 and len(activation_code) <= 256 and re.fullmatch(r"sk-[A-Za-z0-9_-]+", activation_code)):
-        return jsonify(error="请填写激活码 12345678 或有效的 DeepSeek Key（sk- 开头）。"), 403
+    is_custom_key = bool(activation_code.startswith("sk-") and len(activation_code) >= 12 and len(activation_code) <= 256 and re.fullmatch(r"sk-[A-Za-z0-9_-]+", activation_code))
+    is_server_pass = bool(ACTIVATION_CODE and secrets.compare_digest(activation_code, ACTIVATION_CODE))
+    if not is_server_pass and not is_custom_key:
+        return jsonify(error="虎符无效。请检查服务器发放的虎符，或填写有效的 DeepSeek Key。"), 403
     if not re.fullmatch(r"[\w\u4e00-\u9fff-]{3,20}", username, flags=re.UNICODE):
         return jsonify(error="账号请使用 3–20 位中英文、数字、下划线或短横线。"), 400
     if len(password) < 8 or len(password) > 128:
@@ -117,7 +122,7 @@ def register():
     session["user_id"] = user_id
     session["username"] = username
     session.permanent = True
-    return jsonify(ok=True, apiMode="server" if activation_code == ACTIVATION_CODE else "byok")
+    return jsonify(ok=True, apiMode="server" if is_server_pass else "byok")
 
 @app.post("/api/login")
 def login():
