@@ -19,6 +19,12 @@
 
 注册时填写虎符或自己的 DeepSeek Key。虎符与服务器保存的私有码匹配时使用服务器 Key；填写 `sk-...` 时使用玩家 Key。玩家 Key 只保留在当前页面内存中并经后端代理，不写入存档或数据库；刷新后可在游戏设置中重新填写。密钥只在本机服务端使用，不会下发到浏览器。若遇到执行策略限制，可直接运行 `.venv\Scripts\python.exe app.py`。
 
+## Netlify 上线
+
+Netlify 负责对外网址和转发请求；当前 Flask 服务部署在 Render。Netlify Functions 目前支持 JavaScript、TypeScript 和 Go，不直接运行本项目的 Flask/Python 服务。仓库中的 `render.yaml` 和 `netlify.toml` 已提供部署配置。首次部署 Render 后，请确认它分配的网址与 `netlify.toml` 中的 `https://qinbox-api.onrender.com` 一致；若不一致，修改该转发网址并推送一次。
+
+Render 需要设置 `DEEPSEEK_API_KEY` 和私有的 `QINBOX_ACTIVATION_CODE`。SQLite 用户库及 Flask 登录会话密钥写入 `/var/data` 持久磁盘，避免重新部署后丢失。Netlify 对外部代理请求有 26 秒超时限制，模型响应超过该时间时浏览器会看到请求失败；若经常发生，应让玩家浏览器直接请求后端并配置跨域认证，或把前后端都迁到同一 Python 主机/自定义域名架构。
+
 ## 主要功能
 
 - 九位历史人物的独立聊天窗口与人物档案。

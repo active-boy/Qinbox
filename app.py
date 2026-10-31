@@ -13,9 +13,11 @@ from flask import Flask, jsonify, render_template, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE = Path(__file__).resolve().parent
+DATA_DIR = Path(os.getenv("QINBOX_DATA_DIR", str(BASE))).resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["MAX_CONTENT_LENGTH"] = 1_000_000
-SECRET_FILE = BASE / ".qinbox_session_secret"
+SECRET_FILE = DATA_DIR / ".qinbox_session_secret"
 if os.getenv("QINBOX_SESSION_SECRET"):
     app.secret_key = os.environ["QINBOX_SESSION_SECRET"]
 else:
@@ -25,7 +27,7 @@ else:
         app.secret_key = secrets.token_hex(32)
         SECRET_FILE.write_text(app.secret_key, encoding="utf-8")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
-DATABASE = BASE / "qinbox_users.sqlite3"
+DATABASE = DATA_DIR / "qinbox_users.sqlite3"
 
 def init_auth_db():
     with sqlite3.connect(DATABASE) as db:
@@ -97,6 +99,10 @@ RELATIONSHIP_GIFTS = {
 @app.get("/")
 def home():
     return render_template("index.html", account_id=session.get("user_id"), account_name=session.get("username"))
+
+@app.get("/health")
+def health():
+    return jsonify(ok=True)
 
 @app.post("/api/register")
 def register():

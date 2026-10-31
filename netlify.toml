@@ -1,0 +1,8 @@
+[build]
+  publish = "netlify/public"
+
+[[redirects]]
+  from = "/*"
+  to = "https://qinbox-api.onrender.com/:splat"
+  status = 200
+  force = true
