@@ -1,0 +1,3 @@
+# Install requirements, copy config.example.py to config.py, add your DeepSeek key, then run: python app.py
+Flask>=3.0,<4.0
+requests>=2.31,<3.0

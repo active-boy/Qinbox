@@ -1,0 +1,10 @@
+__pycache__/
+.venv/
+venv/
+config.py
+.env
+*.sqlite3
+*.db
+*.log
+static/images/gifts/*.png
+.qinbox_session_secret
