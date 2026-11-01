@@ -55,7 +55,7 @@ function renderLishan(content){
  };
 }
 function qinCourtPost(post){
- const state=window.qinGetState(),people=window.qinPeople;const ids=post.characterIds||[];const names=ids.map(id=>people[id]?.name||id);const avatar=id=>`<span class="avatar post-avatar" style="background-image:url('/static/images/${id}.png')"></span>`;const date=new Date(post.at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+ const state=window.qinGetState(),people=window.qinPeople;const ids=post.characterIds||[];const names=ids.map(id=>people[id]?.name||id);const avatar=id=>`<span class="avatar post-avatar" style="background-image:url('/static/images/${id}.webp')"></span>`;const date=new Date(post.at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
  return `<article class="court-post"><div class="post-top">${ids.map(avatar).join('')}<span class="post-authors">${names.join(' × ')}</span><span class="post-date">${date}</span></div>${post.error?`<div class="post-error">宫廷新谈暂未生成：${qinEsc(post.error)}</div>`:`<div class="court-turns">${(post.turns||[]).map(t=>`<div class="court-turn"><b>${qinEsc(t.name)}</b><span>${qinEsc(t.text)}</span></div>`).join('')}</div>`}<div class="post-foot"><span>✧ 梦中宫苑 · 戏剧演绎</span><span>${post.shared?'记入全局梦痕':'仅作宫中偶闻'}</span></div></article>`;
 }
 window.createCourtPost=async function(){

@@ -12,7 +12,11 @@ mkdirSync(publishDir, { recursive: true });
 cpSync(staticSource, staticTarget, { recursive: true });
 const giftImageDir = resolve(staticTarget, 'images/gifts');
 for (const name of readdirSync(giftImageDir)) {
-  if (name.endsWith('.png')) rmSync(resolve(giftImageDir, name));
+  if (/\.(png|jpe?g)$/i.test(name)) rmSync(resolve(giftImageDir, name));
+}
+const imageDir = resolve(staticTarget, 'images');
+for (const name of readdirSync(imageDir)) {
+  if (/\.png$/i.test(name)) rmSync(resolve(imageDir, name));
 }
 
 let html = readFileSync(resolve(root, 'templates/index.html'), 'utf8');
