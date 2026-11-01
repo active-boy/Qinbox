@@ -1,2 +1,9 @@
 [build]
+  command = "node scripts/build_netlify.mjs"
   publish = "netlify/public"
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://qinbox-api-338829-13-1521971087.sh.run.tcloudbase.com/api/:splat"
+  status = 200
+  force = true

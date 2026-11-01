@@ -25,6 +25,12 @@
 
 云托管容器按无状态服务设计，不要把 SQLite 或会话密钥留在容器本地；账号数据库使用 MySQL，Flask 登录状态使用固定的服务端密钥签名。本机存档仍保存在玩家浏览器中。微信云托管资源有免费额度及按量计费规则，请在控制台留意额度和用量。
 
+## Netlify H5 入口
+
+Netlify 部署完整 H5 静态前端，账号、对话和存档 API 仍由微信云托管 Flask 服务处理。`netlify.toml` 将 `/api/*` 通过 Netlify rewrite 同域代理到当前云托管服务地址；若云托管公网域名更换，需要同步修改该地址。Netlify 构建时运行 `node scripts/build_netlify.mjs`，从 `templates/index.html` 和 `static/` 生成发布文件，不要手工编辑 `netlify/public/` 生成物。
+
+静态入口通过 `/api/session` 检查云端登录状态，登录 Cookie 由 Netlify 同域代理承接；账号存档仍按服务端账号隔离。页面地址可以使用 Netlify 提供的 `*.netlify.app` 子域名分享。该地址适合本项目当前的 H5 访问需求，但不能替代微信小程序 WebView 所需的正式业务域名配置。
+
 ## 主要功能
 
 - 九位历史人物的独立聊天窗口与人物档案。

@@ -224,3 +224,4 @@ config.py
 *.db
 .qinbox_session_secret
 static/images/gifts/*.png
+netlify/public/static/

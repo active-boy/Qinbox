@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from flask import Flask, jsonify, render_template, request, session
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
 try:
@@ -48,6 +49,10 @@ elif AUTH_DB_MODE == "sqlite":
         app.secret_key = secrets.token_hex(32)
         SECRET_FILE.write_text(app.secret_key, encoding="utf-8")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+MINI_TOKEN_MAX_AGE = 30 * 24 * 60 * 60
+
+def mini_token_serializer():
+    return URLSafeTimedSerializer(app.secret_key, salt="qinbox-miniprogram-auth-v1")
 if AUTH_DB_MODE == "sqlite":
     DATABASE = Path(os.getenv("QINBOX_DATA_DIR", str(BASE))).resolve() / "qinbox_users.sqlite3"
 
@@ -110,9 +115,28 @@ def login_required(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
         if not session.get("user_id"):
-            return jsonify(error="请先登录。"), 401
+            authorization = request.headers.get("Authorization", "")
+            token = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+            if token:
+                try:
+                    identity = mini_token_serializer().loads(token, max_age=MINI_TOKEN_MAX_AGE)
+                    session["user_id"] = int(identity["user_id"])
+                    session["username"] = str(identity["username"])
+                    session.permanent = True
+                except (BadSignature, KeyError, TypeError, ValueError):
+                    return jsonify(error="小程序登录凭证无效或已过期，请重新登录。"), 401
+            else:
+                return jsonify(error="请先登录。"), 401
         return fn(*args, **kwargs)
     return wrapped
+
+def auth_success_response(user_id, username, **extra):
+    result = {"ok": True, "userId": user_id, **extra}
+    request_data = request.get_json(silent=True)
+    if isinstance(request_data, dict) and request_data.get("client") in ("miniprogram", "minigame"):
+        result["accessToken"] = mini_token_serializer().dumps({"user_id": user_id, "username": username})
+        result["username"] = username
+    return jsonify(result)
 
 def get_api_key(req):
     """Return a request-scoped BYOK key, or the server-owned fallback key."""
@@ -175,6 +199,12 @@ def home():
 def health():
     return jsonify(ok=True)
 
+@app.get("/api/session")
+def current_session():
+    user_id = session.get("user_id")
+    username = session.get("username")
+    return jsonify(authenticated=bool(user_id and username), userId=user_id, username=username)
+
 @app.post("/api/register")
 def register():
     data = request.get_json(silent=True) or {}
@@ -199,7 +229,7 @@ def register():
     session["user_id"] = user_id
     session["username"] = username
     session.permanent = True
-    return jsonify(ok=True, apiMode="server" if is_server_pass else "byok")
+    return auth_success_response(user_id, username, apiMode="server" if is_server_pass else "byok")
 
 @app.post("/api/login")
 def login():
@@ -214,7 +244,7 @@ def login():
     session["user_id"] = row[0]
     session["username"] = row[1]
     session.permanent = True
-    return jsonify(ok=True)
+    return auth_success_response(row[0], row[1])
 
 @app.post("/api/logout")
 def logout():

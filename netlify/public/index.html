@@ -1,11 +1,66 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>秦-Box</title>
-  </head>
-  <body>
-    <p>秦-Box 后端已迁移至微信云托管。请通过微信小程序或最新云托管服务地址访问。</p>
-  </body>
-</html>
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f1e9"><title>秦-Box · 咸阳来信</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v=17">
+</head>
+<body>
+<div id="auth-screen" class="auth-screen">
+  <div class="auth-art" aria-hidden="true"></div>
+  <section class="auth-card"><div class="auth-seal">秦</div><div class="auth-kicker">咸阳来信 · 梦境存档</div><h1>秦-Box</h1><p class="auth-subtitle">登录后继续你的咸阳故事</p>
+    <form id="login-form" class="auth-form"><label>账号<input name="username" autocomplete="username" required maxlength="20" placeholder="输入账号"></label><label>密码<input name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="输入密码"></label><button class="auth-submit">登录</button><button type="button" class="auth-switch" data-auth-mode="register">首次来访？凭虎符注册</button></form>
+    <form id="register-form" class="auth-form hidden"><label>虎符<input name="activationCode" type="password" autocomplete="off" required maxlength="256" placeholder="输入虎符或 DeepSeek Key"></label><label>账号<input name="username" autocomplete="username" required maxlength="20" placeholder="3–20 位中英文、数字或符号"></label><label>密码<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128" placeholder="至少 8 位"></label><button class="auth-submit">注册并进入大厅</button><button type="button" class="auth-switch" data-auth-mode="login">已有账号？返回登录</button></form>
+    <div id="auth-message" class="auth-message" role="status"></div>
+  </section>
+</div>
+<div id="lobby-screen" class="game-lobby hidden">
+  <div class="lobby-image" aria-hidden="true"></div><div class="lobby-shade"></div>
+  <header class="lobby-header"><div class="lobby-wordmark"><span>秦</span> 秦-Box</div><div class="lobby-user"><span id="lobby-user-name"></span><button id="logout-button">切换账号</button></div></header>
+  <main class="lobby-center"><div class="lobby-overline">咸阳 · 梦境来信</div><h1>长夜将尽，故人入梦</h1><p>在历史的回声里，听见未曾说尽的话。</p><button id="enter-dream" class="enter-dream"><span>入梦</span></button><small>点击入梦，开启这一局</small>
+  </main>
+  <div class="lobby-bottom"><span>秦王政二十六年 · 咸阳</span><span>一城灯火，万古人心</span></div>
+  <div id="curtain-transition" class="curtain-transition" aria-hidden="true"><div class="curtain curtain-left"></div><div class="curtain curtain-right"></div></div>
+</div>
+<div class="app-shell">
+  <aside class="rail">
+    <div class="brand"><span class="brand-seal">秦</span><span>秦-Box</span></div>
+    <div class="rail-label">咸阳 · 来信</div>
+    <div id="character-list" class="character-list"></div>
+    <button class="rail-add" id="new-chat" title="新建一轮存档">＋ <span>新故事</span></button>
+    <div class="rail-foot"><span class="online-dot"></span> 梦境相连</div>
+  </aside>
+  <main class="main-panel">
+    <header class="topbar">
+      <div class="top-person"><div id="top-avatar" class="avatar mini"></div><div><div id="top-name" class="top-name">嬴政</div><div id="top-subtitle" class="top-subtitle">始皇帝 · 秦</div></div></div>
+      <div class="top-actions"><div class="era-pill"><span class="era-dot"></span><span id="current-era">咸阳 · 秦王政二十六年</span></div><button class="icon-button" id="profile-open" title="人物手记">◉</button><button class="icon-button" id="history-btn" title="记忆档案">▤</button><button class="icon-button" id="settings-btn" title="设置">⚙</button></div>
+    </header>
+    <section class="stage" id="stage">
+      <div class="chat-headline"><div class="chapter-kicker"><span class="tiny-line"></span> 秦-Box 来信 <span class="tiny-line"></span></div><h1 id="greeting-title">宫墙深处，来了一封信</h1><p id="greeting-subtitle">你的每一次倾听，都可能改变记忆的去向。</p></div>
+      <div id="messages" class="messages"></div>
+      <div id="typing" class="typing hidden"><span></span><span></span><span></span><i>正在斟酌言辞…</i></div>
+      <div id="quick-prompts" class="quick-prompts"><button data-prompt="你今日似乎心事重重，可愿说与我听？">问问今日心事</button><button data-prompt="若入梦一回，你最不愿想起什么？">共入一梦</button><button data-prompt="咸阳城近日可有新鲜事？">打听咸阳近况</button></div>
+      <form id="composer" class="composer"><button class="composer-plus" type="button" id="gift-open" title="背包与礼物">＋</button><div class="input-wrap"><textarea id="message-input" rows="1" placeholder="写下你想说的话…" maxlength="1500"></textarea><div class="input-meta"><span>Enter 发送 · Shift + Enter 换行</span><span id="char-count">0 / 1500</span></div></div><button class="send-button" type="submit" aria-label="发送">➤</button></form>
+      <footer class="safety-note">历史人物为戏剧化演绎 · 存档关联账号并自动同步 <span id="save-sync-status" aria-live="polite">读取账号存档…</span></footer>
+    </section>
+    <section id="tab-view" class="tab-view hidden"></section>
+    <nav class="bottom-nav"><button class="nav-item active" data-tab="chat"><span>◉</span>聊天</button><button class="nav-item" data-tab="contacts"><span>♙</span>通讯录</button><button class="nav-item" data-tab="discover"><span>◈</span>发现</button><button class="nav-item" data-tab="me"><span>◯</span>我</button></nav>
+  </main>
+  <aside class="right-panel">
+    <div class="right-top"><span>魇胜师手记</span><button id="right-close" class="mobile-close">×</button></div>
+    <div class="profile-art" id="profile-art"><div class="profile-art-glow"></div><div id="profile-portrait" class="profile-portrait"></div><div class="profile-art-caption">大秦 · 人物小像</div></div>
+    <div class="profile-info"><div class="profile-title"><div><h2 id="profile-name">嬴政</h2><p id="profile-title">秦王 · 后称始皇帝</p></div><span id="relationship-badge" class="relationship-badge">初识</span></div><p id="profile-desc" class="profile-desc"></p>
+    <div class="divider"></div><div class="section-heading">羁绊信誉 <span id="trust-value">20</span></div><div class="progress-track"><div id="trust-bar" class="progress-fill"></div></div><div id="trust-caption" class="progress-caption">多倾听与回应，关系会慢慢靠近</div>
+    <div class="divider"></div><div class="section-heading">梦境共感 <span id="hypnosis-label" class="toggle-label">关闭</span></div><div class="hypnosis-row"><div class="hypnosis-copy"><b>共享记忆</b><small>开启后，已解锁的记忆片段可在角色间传递</small></div><button id="hypnosis-toggle" class="toggle" aria-label="切换催眠与共享记忆" aria-pressed="false"><span></span></button></div>
+    <div class="memory-card"><div class="memory-icon">✧</div><div><b id="memory-title">记忆留白</b><p id="memory-copy">催眠开启并产生记忆片段后，将在这里留下线索。</p></div></div>
+    <div class="divider"></div><div class="section-heading">最近线索 <button class="text-button" id="all-clues">查看全部</button></div><div id="clue-list" class="clue-list"></div>
+    </div>
+    <div class="right-footer"><span>咸阳城 · 夜风正起</span><span>✦</span></div>
+  </aside>
+</div>
+<div id="modal" class="modal hidden"><div class="modal-backdrop"></div><div class="modal-card"><button id="modal-close" class="modal-close">×</button><div id="modal-content"></div></div></div>
+<div id="toast" class="toast"></div>
+<script>window.QIN_ACCOUNT=null;window.QIN_ACCOUNT_NAME="";window.QIN_STATIC_HOST=true;</script><script src="/static/lobby.js?v=6"></script><script src="/static/app.js?v=20"></script><script src="/static/discover.js?v=10"></script><script src="/static/military.js?v=9"></script><script src="/static/translation.js?v=12"></script>
+</body></html>
