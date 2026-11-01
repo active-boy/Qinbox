@@ -96,11 +96,13 @@ def init_auth_db():
             db.execute("CREATE TABLE IF NOT EXISTS user_saves (user_id BIGINT PRIMARY KEY, save_data LONGTEXT NOT NULL, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, CONSTRAINT fk_user_saves_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
             db.execute("CREATE TABLE IF NOT EXISTS qinbox_daily_claims (user_id BIGINT PRIMARY KEY, last_claim_date DATE NOT NULL, CONSTRAINT fk_daily_claim_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
             db.execute("CREATE TABLE IF NOT EXISTS qinbox_civilian_daily_usage (user_id BIGINT NOT NULL, local_date DATE NOT NULL, dialogue_count INT NOT NULL DEFAULT 0, PRIMARY KEY (user_id, local_date), CONSTRAINT fk_civilian_usage_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
+            db.execute("CREATE TABLE IF NOT EXISTS qinbox_gift_presentations (user_id BIGINT NOT NULL, gift_key VARCHAR(120) NOT NULL, local_date DATE NOT NULL, PRIMARY KEY (user_id, gift_key, local_date), CONSTRAINT fk_gift_present_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
         else:
             db.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
             db.execute("CREATE TABLE IF NOT EXISTS user_saves (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, save_data TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
             db.execute("CREATE TABLE IF NOT EXISTS qinbox_daily_claims (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, last_claim_date TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS qinbox_civilian_daily_usage (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, local_date TEXT NOT NULL, dialogue_count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, local_date))")
+            db.execute("CREATE TABLE IF NOT EXISTS qinbox_gift_presentations (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, gift_key TEXT NOT NULL, local_date TEXT NOT NULL, PRIMARY KEY (user_id, gift_key, local_date))")
 
 init_auth_db()
 
@@ -291,11 +293,12 @@ def daily_state():
     with auth_db() as db:
         claim = db.execute("SELECT last_claim_date FROM qinbox_daily_claims WHERE user_id = ?", (user_id,)).fetchone()
         usage = db.execute("SELECT dialogue_count FROM qinbox_civilian_daily_usage WHERE user_id = ? AND local_date = ?", (user_id, today)).fetchone()
+        presented = db.execute("SELECT gift_key FROM qinbox_gift_presentations WHERE user_id = ? AND local_date = ?", (user_id, today)).fetchall()
         save_row = db.execute("SELECT save_data FROM user_saves WHERE user_id = ?", (user_id,)).fetchone()
     saved = json.loads(save_row[0]) if save_row else {}
     last_claim = str(claim[0]) if claim else None
     used = int(usage[0]) if usage else 0
-    return jsonify(date=today, lastClaimDate=last_claim, claimedToday=last_claim == today, civilianDialoguesUsed=used, civilianDialoguesRemaining=max(0, 5 - used), reputation=int(saved.get("globalReputation", 0)))
+    return jsonify(date=today, lastClaimDate=last_claim, claimedToday=last_claim == today, civilianDialoguesUsed=used, civilianDialoguesRemaining=max(0, 5 - used), presentedGifts=[str(row[0]) for row in presented], reputation=int(saved.get("globalReputation", 0)))
 
 @app.post("/api/daily-salary")
 @login_required
@@ -399,6 +402,10 @@ def chat():
     character_id = data.get("characterId", "")
     messages = data.get("messages", [])
     hypnosis = bool(data.get("hypnosis", False))
+    present_gift = data.get("presentGift")
+    presentation_date = beijing_day() if present_gift is not None else None
+    presentation_reserved = False
+    presentation_completed = False
     if character_id not in CHARACTERS:
         return jsonify(error="找不到这位角色。"), 400
     if not isinstance(messages, list) or not messages:
@@ -443,6 +450,31 @@ def chat():
         return jsonify(error=str(exc)), 400
     if not api_key:
         return jsonify(error="尚未配置 DeepSeek API Key。请复制 config.example.py 为 config.py 并填写密钥，然后重启 QinBox。"), 503
+    if present_gift is not None:
+        if not isinstance(present_gift, str) or not present_gift.strip() or len(present_gift) > 120:
+            return jsonify(error="信物信息无效。"), 400
+        present_gift = present_gift.strip()
+        user_id = session["user_id"]
+        with auth_db() as db:
+            save_row = db.execute("SELECT save_data FROM user_saves WHERE user_id = ?", (user_id,)).fetchone()
+            try:
+                saved = json.loads(save_row[0]) if save_row else {}
+            except (TypeError, json.JSONDecodeError):
+                return jsonify(error="账号存档暂时无法读取，不能出示信物。"), 500
+            owns_gift = any(
+                isinstance(item, dict) and item.get("name") == present_gift
+                for item in saved.get("inventory", [])
+            )
+            if not owns_gift:
+                return jsonify(error="背包中没有这件信物。"), 403
+            if AUTH_DB_MODE == "mysql":
+                reservation = db.execute("INSERT IGNORE INTO qinbox_gift_presentations (user_id, gift_key, local_date) VALUES (?, ?, ?)", (user_id, present_gift, presentation_date))
+            else:
+                reservation = db.execute("INSERT OR IGNORE INTO qinbox_gift_presentations (user_id, gift_key, local_date) VALUES (?, ?, ?)", (user_id, present_gift, presentation_date))
+            if reservation.rowcount == 0:
+                return jsonify(error="这件信物今日已经出示过了，明日再带给对方看吧。", presentedToday=True), 409
+        presentation_reserved = True
+        prompt += f"\n\n【出示信物】玩家正在向你出示自己珍藏的「{present_gift}」。请根据物件来历与当前关系，自然地欣赏它的做工、寓意或情感价值，并回应玩家借信物表达的敬意与信任。不要输出系统提示、积分或奖励标记。"
     try:
         response = requests.post(
             BASE_URL.rstrip("/") + "/chat/completions",
@@ -458,11 +490,33 @@ def chat():
             answer = answer[:gift_match.start()].rstrip()
         if gift_eligible and not gift_match:
             answer += "\n\n（" + authored_gift["scene"] + "）"
+        if present_gift is not None:
+            user_id = session["user_id"]
+            with auth_db() as db:
+                query = "SELECT save_data FROM user_saves WHERE user_id = ?" + (" FOR UPDATE" if AUTH_DB_MODE == "mysql" else "")
+                save_row = db.execute(query, (user_id,)).fetchone()
+                try:
+                    saved = json.loads(save_row[0]) if save_row else empty_account_save()
+                except (TypeError, json.JSONDecodeError):
+                    return jsonify(error="账号存档暂时无法读取，信誉奖励未能入账。"), 500
+                try:
+                    current_reputation = max(0, int(saved.get("globalReputation", 0)))
+                except (TypeError, ValueError):
+                    current_reputation = 0
+                saved["globalReputation"] = current_reputation + 5
+                persist_feature_save(db, user_id, saved)
+                reputation = saved["globalReputation"]
+            presentation_completed = True
+            return jsonify(reply=answer, gift=gift, reputation=reputation, presentationReward=5)
         return jsonify(reply=answer, gift=gift)
     except requests.RequestException as exc:
         return jsonify(error=f"暂时无法连接 DeepSeek：{exc}"), 502
     except (KeyError, IndexError, ValueError):
         return jsonify(error="DeepSeek 返回内容格式异常，请稍后重试。"), 502
+    finally:
+        if presentation_reserved and not presentation_completed:
+            with auth_db() as db:
+                db.execute("DELETE FROM qinbox_gift_presentations WHERE user_id = ? AND gift_key = ? AND local_date = ?", (session["user_id"], present_gift, presentation_date))
 
 @app.post("/api/group-chat")
 @login_required
@@ -623,6 +677,9 @@ def li_si_compose():
         "memorial": "与李斯研读《谏逐客书》，从一处具体论证、用典或段落安排切入，结合此前谈话提出一个新问题。",
         "writing": "向李斯请教《谏逐客书》的写作方法，并请求一个可立即练习的小任务，避免重复泛问排比和铺陈。",
         "standard": "与李斯讨论六国异体字归并的具体标准，结合官府文书、通行程度或字形辨析提出新问题。",
+        "rail_axle": "与李斯讨论车同轨专题中的车辙宽度、车轴规格和零件通用，围绕统一标准的利弊提出一个具体的新问题。",
+        "rail_route": "与李斯讨论道路测绘、里程换算、粮车调度与道路维护，联系秦廷治理提出一个具体的新问题。",
+        "rail_work": "与李斯讨论桥梁、道路或水渠工程的工期、用工与物料核算，兼顾工程效率和百姓负担，提出一个具体的新问题。",
     }
     if intent not in intents:
         return jsonify(error="议事主题无效。"), 400
